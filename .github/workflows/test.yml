@@ -1,0 +1,150 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run build
+
+      - name: Run Playwright tests
+        id: playwright
+        run: |
+          npx playwright test --reporter=json,html 2>&1 | tee playwright-output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=$TEST_EXIT_CODE" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Parse test results
+        id: results
+        if: always()
+        run: |
+          if [ -f e2e/test-results.json ]; then
+            TOTAL=$(jq '.stats.expected // 0' e2e/test-results.json)
+            PASSED=$(jq '[.suites[]?.specs[]?.tests[]? | select(.status == "expected")] | length' e2e/test-results.json 2>/dev/null || echo "0")
+            FAILED=$(jq '[.suites[]?.specs[]?.tests[]? | select(.status == "unexpected")] | length' e2e/test-results.json 2>/dev/null || echo "0")
+            SKIPPED=$(jq '[.suites[]?.specs[]?.tests[]? | select(.status == "skipped")] | length' e2e/test-results.json 2>/dev/null || echo "0")
+          else
+            TOTAL=0
+            PASSED=0
+            FAILED=0
+            SKIPPED=0
+          fi
+
+          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "passed=$PASSED" >> "$GITHUB_OUTPUT"
+          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
+          echo "skipped=$SKIPPED" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ steps.playwright.outputs.exit_code }}" = "0" ]; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            e2e/test-results.json
+            e2e/screenshots/
+            playwright-report/
+          retention-days: 14
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: e2e/screenshots/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Notify Fastable2 webhook
+        if: always() && env.FASTABLE2_WEBHOOK_URL != ''
+        env:
+          FASTABLE2_WEBHOOK_URL: ${{ secrets.FASTABLE2_WEBHOOK_URL }}
+          FASTABLE2_WEBHOOK_SECRET: ${{ secrets.FASTABLE2_WEBHOOK_SECRET }}
+        run: |
+          # Read full test results JSON if available
+          TEST_RESULTS='{}'
+          if [ -f e2e/test-results.json ]; then
+            TEST_RESULTS=$(cat e2e/test-results.json)
+          fi
+
+          # Collect screenshot file names
+          SCREENSHOTS='[]'
+          if [ -d e2e/screenshots ]; then
+            SCREENSHOTS=$(find e2e/screenshots -type f -name '*.png' -o -name '*.jpg' | jq -R -s 'split("\n") | map(select(length > 0))')
+          fi
+
+          # Build the webhook payload
+          PAYLOAD=$(jq -n \
+            --arg projectId "${{ github.repository }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg ref "${{ github.ref }}" \
+            --arg status "${{ steps.results.outputs.status }}" \
+            --arg runId "${{ github.run_id }}" \
+            --arg runUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg event "${{ github.event_name }}" \
+            --argjson total "${{ steps.results.outputs.total }}" \
+            --argjson passed "${{ steps.results.outputs.passed }}" \
+            --argjson failed "${{ steps.results.outputs.failed }}" \
+            --argjson skipped "${{ steps.results.outputs.skipped }}" \
+            --argjson testResults "$TEST_RESULTS" \
+            --argjson screenshots "$SCREENSHOTS" \
+            '{
+              projectId: $projectId,
+              sha: $sha,
+              ref: $ref,
+              status: $status,
+              event: $event,
+              runId: $runId,
+              runUrl: $runUrl,
+              summary: {
+                total: $total,
+                passed: $passed,
+                failed: $failed,
+                skipped: $skipped
+              },
+              testResults: $testResults,
+              screenshots: $screenshots
+            }')
+
+          # Compute HMAC signature for verification
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$FASTABLE2_WEBHOOK_SECRET" | awk '{print $2}')
+
+          # Send the webhook
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$FASTABLE2_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Signature: sha256=$SIGNATURE" \
+            -H "X-GitHub-Event: test_results" \
+            -d "$PAYLOAD")
+
+          echo "Webhook response status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Webhook notification sent successfully."
+          else
+            echo "Warning: Webhook notification failed with status $HTTP_STATUS"
+          fi

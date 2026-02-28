@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fastable2 App</title>
+    <script>
+    // Fastable2 iframe bridge — captures console, errors, and app health
+    (function(){
+      if(window.__f2bridge) return;
+      window.__f2bridge=true;
+      var orig={};
+      ['log','info','warn','error'].forEach(function(m){
+        orig[m]=console[m];
+        console[m]=function(){
+          var a=Array.prototype.slice.call(arguments);
+          try{orig[m].apply(console,a)}catch(e){}
+          send(m,a);
+        };
+      });
+      function ser(v){
+        try{
+          if(v===null)return'null';
+          if(v===undefined)return'undefined';
+          if(v instanceof Error)return v.stack||v.toString();
+          if(typeof v==='object')return JSON.stringify(v,function(k,val){
+            if(typeof val==='function')return'[Function]';
+            if(val instanceof Error)return val.toString();
+            return val;
+          });
+          return String(v);
+        }catch(e){return'[serialize error]'}
+      }
+      function send(level,args){
+        try{
+          if(window.parent&&window.parent!==window){
+            window.parent.postMessage({
+              source:'fastable2-app',
+              type:'console',
+              level:level,
+              payload:args.map(ser),
+              ts:Date.now(),
+              url:location.href
+            },'*');
+          }
+        }catch(e){}
+      }
+      window.addEventListener('error',function(e){
+        send('error',['[Uncaught] '+(e.error?e.error.stack||e.error:e.message)+' at '+e.filename+':'+e.lineno]);
+      });
+      window.addEventListener('unhandledrejection',function(e){
+        send('error',['[Promise Rejection] '+(e.reason&&e.reason.stack||e.reason)]);
+      });
+      // Notify parent when DOM is ready and when React mounts
+      function heartbeat(){
+        try{
+          if(window.parent&&window.parent!==window){
+            var root=document.getElementById('root');
+            window.parent.postMessage({
+              source:'fastable2-app',
+              type:'health',
+              mounted:!!(root&&root.children.length>0),
+              hasText:!!(root&&root.innerText&&root.innerText.trim().length>10),
+              ts:Date.now()
+            },'*');
+          }
+        }catch(e){}
+      }
+      // Send health checks: on load, then every 3 seconds
+      if(document.readyState==='loading'){
+        document.addEventListener('DOMContentLoaded',heartbeat);
+      }else{
+        heartbeat();
+      }
+      setInterval(heartbeat,3000);
+    })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
