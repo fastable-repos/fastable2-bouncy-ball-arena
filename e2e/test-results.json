@@ -1,0 +1,87 @@
+{
+  "config": {
+    "configFile": "/tmp/work/0e26937a-ff68-4594-ac2c-611f35190039/playwright.config.ts",
+    "rootDir": "/tmp/work/0e26937a-ff68-4594-ac2c-611f35190039/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/tmp/work/0e26937a-ff68-4594-ac2c-611f35190039/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/tmp/work/0e26937a-ff68-4594-ac2c-611f35190039/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "html",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "e2e/test-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "runAgents": "none",
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.58.2",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev",
+      "url": "http://localhost:5173",
+      "reuseExistingServer": true,
+      "timeout": 30000
+    }
+  },
+  "suites": [],
+  "errors": [
+    {
+      "message": "ReferenceError: __dirname is not defined in ES module scope",
+      "stack": "ReferenceError: __dirname is not defined in ES module scope\n    at /tmp/work/0e26937a-ff68-4594-ac2c-611f35190039/e2e/helpers.ts:5:35",
+      "location": {
+        "file": "/tmp/work/0e26937a-ff68-4594-ac2c-611f35190039/e2e/helpers.ts",
+        "column": 35,
+        "line": 5
+      },
+      "snippet": "\u001b[90m   at \u001b[39mhelpers.ts:5\n\n  3 | import fs from 'fs'\n  4 |\n> 5 | const SCREENSHOTS_DIR = path.join(__dirname, 'screenshots')\n    |                                   ^\n  6 |\n  7 | export async function captureScreenshot(page: Page, name: string): Promise<void> {\n  8 |   if (!fs.existsSync(SCREENSHOTS_DIR)) {"
+    },
+    {
+      "message": "Error: No tests found",
+      "stack": "Error: No tests found"
+    }
+  ],
+  "stats": {
+    "startTime": "2026-02-28T03:25:20.691Z",
+    "duration": 1036.236,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
